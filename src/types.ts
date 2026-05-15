@@ -111,6 +111,7 @@ export interface PriorityConfig {
 export interface PMSettings {
   projectsFolder: string
   defaultView: ViewMode
+  taskModalSaveOnClose: boolean
   ganttGranularity: GanttGranularity
   ganttWeekLabel: GanttWeekLabel
   statuses: StatusConfig[]
@@ -144,6 +145,7 @@ export const DEFAULT_PRIORITIES: PriorityConfig[] = [
 export const DEFAULT_SETTINGS: PMSettings = {
   projectsFolder: 'Projects',
   defaultView: 'table',
+  taskModalSaveOnClose: true,
   ganttGranularity: 'week',
   ganttWeekLabel: 'weekNumber',
   statuses: DEFAULT_STATUSES,
