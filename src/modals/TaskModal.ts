@@ -14,6 +14,7 @@ export class TaskModal extends Modal {
   private task: Task
   private isNew: boolean
   private originalParentId: string | null
+  private initialTaskSnapshot: string
   private cancelled = false
   private saved = false
   private persistPromise: Promise<void> | null = null
@@ -47,6 +48,7 @@ export class TaskModal extends Modal {
       this.isNew = true
     }
     this.originalParentId = this.parentId
+    this.initialTaskSnapshot = JSON.stringify(this.task)
   }
 
   onOpen(): void {
@@ -60,10 +62,9 @@ export class TaskModal extends Modal {
   onClose(): void {
     if (
       this.plugin.settings.taskModalSaveOnClose &&
-      !this.isNew &&
       !this.cancelled &&
       !this.saved &&
-      this.task.title.trim()
+      this.shouldAutoPersistOnClose()
     ) {
       void this.persistTask()
     }
@@ -76,6 +77,11 @@ export class TaskModal extends Modal {
     if (this.persistPromise) return this.persistPromise
     this.persistPromise = this.runPersist()
     return this.persistPromise
+  }
+
+  private shouldAutoPersistOnClose(): boolean {
+    if (!this.task.title.trim()) return false
+    return this.parentId !== this.originalParentId || JSON.stringify(this.task) !== this.initialTaskSnapshot
   }
 
   private async insertAttachments(
