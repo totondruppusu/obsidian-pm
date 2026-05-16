@@ -108,6 +108,20 @@ export class PMSettingTab extends PluginSettingTab {
         })
       )
 
+    new Setting(containerEl)
+      .setName('Assignee avatar initials')
+      .setDesc('Choose how initials are generated for assignee avatars.')
+      .addDropdown((dd) =>
+        dd
+          .addOption('firstTwoChars', 'First two characters')
+          .addOption('firstAndSecondWord', 'First + second word initials')
+          .setValue(this.plugin.settings.assigneeInitialsMode)
+          .onChange(async (v) => {
+            this.plugin.settings.assigneeInitialsMode = v as PMSettings['assigneeInitialsMode']
+            await this.plugin.saveSettings()
+          })
+      )
+
     // ── Notifications ─────────────────────────────────────────────────────────
     new Setting(containerEl).setName('Due date notifications').setHeading()
 

@@ -1,5 +1,5 @@
 import { Notice } from 'obsidian'
-import type { Task, StatusConfig, PriorityConfig, TaskPriority } from './types'
+import type { AssigneeInitialsMode, Task, StatusConfig, PriorityConfig, TaskPriority } from './types'
 import { today, parsePlainDate, Temporal } from './dates'
 
 /** Deterministic HSL color from a string (e.g. assignee name) */
@@ -87,6 +87,17 @@ export function getPriorityConfig(priorities: PriorityConfig[], id: TaskPriority
 /** Format a config's icon + label into display text (e.g. "🔴 Critical") */
 export function formatBadgeText(icon: string | undefined, label: string): string {
   return [icon, label].filter(Boolean).join(' ')
+}
+
+/** Build avatar initials from a person name according to configured mode. */
+export function getAssigneeInitials(name: string, mode: AssigneeInitialsMode): string {
+  const trimmed = name.trim()
+  if (!trimmed) return ''
+  const words = trimmed.split(/\s+/)
+  if (mode === 'firstAndSecondWord' && words.length > 1) {
+    return (words[0].charAt(0) + words[1].charAt(0)).toUpperCase()
+  }
+  return trimmed.slice(0, 2).toUpperCase()
 }
 
 /** Wrap an async callback so unhandled rejections show a Notice and log to console */

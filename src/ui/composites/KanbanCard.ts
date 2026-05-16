@@ -1,4 +1,4 @@
-import type { Task } from '../../types'
+import type { AssigneeInitialsMode, Task } from '../../types'
 import { formatDateShort } from '../../utils'
 import { AvatarStack } from '../primitives/AvatarStack'
 import { Badge } from '../primitives/Badge'
@@ -15,6 +15,7 @@ export interface KanbanCardProps {
   subtaskProgress?: { done: number; total: number }
   loggedHours: number
   overdue: boolean
+  assigneeInitialsMode: AssigneeInitialsMode
   onClick: () => void
   onContextMenu: (e: MouseEvent) => void
   onDragStart: () => void
@@ -71,7 +72,7 @@ export class KanbanCard {
     }
 
     const footer = body.createDiv('pm-kanban-card-footer')
-    new AvatarStack(footer).setNames(task.assignees).setMax(3).setSize('sm')
+    new AvatarStack(footer).setNames(task.assignees).setMax(3).setSize('sm').setInitialsMode(props.assigneeInitialsMode)
 
     if (task.due) {
       new DueDateChip(footer)

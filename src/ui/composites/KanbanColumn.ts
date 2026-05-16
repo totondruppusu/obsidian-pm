@@ -1,4 +1,4 @@
-import type { Task } from '../../types'
+import type { AssigneeInitialsMode, Task } from '../../types'
 import { formatBadgeText, safeAsync } from '../../utils'
 import { KanbanCard } from './KanbanCard'
 
@@ -17,6 +17,7 @@ export interface KanbanCardData {
   subtaskProgress?: { done: number; total: number }
   loggedHours: number
   overdue: boolean
+  assigneeInitialsMode: AssigneeInitialsMode
 }
 
 export interface KanbanColumnProps {
@@ -68,6 +69,7 @@ export class KanbanColumn {
         subtaskProgress: card.subtaskProgress,
         loggedHours: card.loggedHours,
         overdue: card.overdue,
+        assigneeInitialsMode: card.assigneeInitialsMode,
         onClick: () => props.onCardClick(card.task),
         onContextMenu: (e) => props.onCardContextMenu(card.task, e),
         onDragStart: () => props.onCardDragStart(card.task),
