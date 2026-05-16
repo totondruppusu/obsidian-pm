@@ -50,7 +50,9 @@ export class PMSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Save task when closing modal')
-      .setDesc('When enabled, closing a task modal with X, Escape, or clicking outside saves edits. When disabled, only the Save button persists changes.')
+      .setDesc(
+        'When enabled, closing a task modal with X, escape, or clicking outside saves edits. When disabled, only the save button persists changes.'
+      )
       .addToggle((t) =>
         t.setValue(this.plugin.settings.taskModalSaveOnClose).onChange(async (v) => {
           this.plugin.settings.taskModalSaveOnClose = v
@@ -58,20 +60,18 @@ export class PMSettingTab extends PluginSettingTab {
         })
       )
 
-    new Setting(containerEl)
-      .setName('Default gantt granularity')
-      .addDropdown((dd) =>
-        dd
-          .addOption('day', 'Day')
-          .addOption('week', 'Week')
-          .addOption('month', 'Month')
-          .addOption('quarter', 'Quarter')
-          .setValue(this.plugin.settings.ganttGranularity)
-          .onChange(async (v) => {
-            this.plugin.settings.ganttGranularity = v as PMSettings['ganttGranularity']
-            await this.plugin.saveSettings()
-          })
-      )
+    new Setting(containerEl).setName('Default gantt granularity').addDropdown((dd) =>
+      dd
+        .addOption('day', 'Day')
+        .addOption('week', 'Week')
+        .addOption('month', 'Month')
+        .addOption('quarter', 'Quarter')
+        .setValue(this.plugin.settings.ganttGranularity)
+        .onChange(async (v) => {
+          this.plugin.settings.ganttGranularity = v as PMSettings['ganttGranularity']
+          await this.plugin.saveSettings()
+        })
+    )
 
     new Setting(containerEl)
       .setName('Gantt week label')
