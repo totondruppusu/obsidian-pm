@@ -58,18 +58,20 @@ export class PMSettingTab extends PluginSettingTab {
         })
       )
 
-    new Setting(containerEl).setName('Default gantt granularity').addDropdown((dd) =>
-      dd
-        .addOption('day', 'Day')
-        .addOption('week', 'Week')
-        .addOption('month', 'Month')
-        .addOption('quarter', 'Quarter')
-        .setValue(this.plugin.settings.ganttGranularity)
-        .onChange(async (v) => {
-          this.plugin.settings.ganttGranularity = v as PMSettings['ganttGranularity']
-          await this.plugin.saveSettings()
-        })
-    )
+    new Setting(containerEl)
+      .setName('Default gantt granularity')
+      .addDropdown((dd) =>
+        dd
+          .addOption('day', 'Day')
+          .addOption('week', 'Week')
+          .addOption('month', 'Month')
+          .addOption('quarter', 'Quarter')
+          .setValue(this.plugin.settings.ganttGranularity)
+          .onChange(async (v) => {
+            this.plugin.settings.ganttGranularity = v as PMSettings['ganttGranularity']
+            await this.plugin.saveSettings()
+          })
+      )
 
     new Setting(containerEl)
       .setName('Gantt week label')
