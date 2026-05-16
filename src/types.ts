@@ -114,6 +114,7 @@ export interface PMSettings {
   taskModalSaveOnClose: boolean
   ganttGranularity: GanttGranularity
   ganttWeekLabel: GanttWeekLabel
+  kanbanShowDescriptionPreview: boolean
   statuses: StatusConfig[]
   priorities: PriorityConfig[]
   globalTeamMembers: string[]
@@ -148,6 +149,7 @@ export const DEFAULT_SETTINGS: PMSettings = {
   taskModalSaveOnClose: true,
   ganttGranularity: 'week',
   ganttWeekLabel: 'weekNumber',
+  kanbanShowDescriptionPreview: false,
   statuses: DEFAULT_STATUSES,
   priorities: DEFAULT_PRIORITIES,
   globalTeamMembers: [],

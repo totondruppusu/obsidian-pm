@@ -352,6 +352,21 @@ export class ProjectView extends ItemView {
       })
     }
 
+    if (this.currentView === 'kanban') {
+      new ButtonComponent(right)
+        .setButtonText(
+          this.plugin.settings.kanbanShowDescriptionPreview ? 'hide description preview' : 'show description preview'
+        )
+        .onClick(
+          safeAsync(async () => {
+            this.plugin.settings.kanbanShowDescriptionPreview = !this.plugin.settings.kanbanShowDescriptionPreview
+            await this.plugin.saveSettings()
+            this.renderProjectToolbar()
+            this.renderCurrentView()
+          })
+        )
+    }
+
     new ExtraButtonComponent(right)
       .setIcon('settings')
       .setTooltip('Project settings')

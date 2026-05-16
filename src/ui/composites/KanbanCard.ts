@@ -11,6 +11,7 @@ export interface KanbanCardProps {
   task: Task
   priorityColor?: string
   parentTitle?: string
+  descriptionPreview?: string
   subtaskProgress?: { done: number; total: number }
   loggedHours: number
   overdue: boolean
@@ -56,6 +57,10 @@ export class KanbanCard {
     const est = task.timeEstimate ?? 0
     if (props.loggedHours > 0 || est > 0) {
       new TimeChip(body).setSize('sm').setHours(props.loggedHours, est)
+    }
+
+    if (props.descriptionPreview) {
+      body.createEl('p', { text: props.descriptionPreview, cls: 'pm-kanban-card-description-preview' })
     }
 
     if (task.tags.length) {

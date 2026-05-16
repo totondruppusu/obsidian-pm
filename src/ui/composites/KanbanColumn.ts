@@ -13,6 +13,7 @@ export interface KanbanCardData {
   task: Task
   priorityColor?: string
   parentTitle?: string
+  descriptionPreview?: string
   subtaskProgress?: { done: number; total: number }
   loggedHours: number
   overdue: boolean
@@ -63,6 +64,7 @@ export class KanbanColumn {
         task: card.task,
         priorityColor: card.priorityColor,
         parentTitle: card.parentTitle,
+        descriptionPreview: card.descriptionPreview,
         subtaskProgress: card.subtaskProgress,
         loggedHours: card.loggedHours,
         overdue: card.overdue,

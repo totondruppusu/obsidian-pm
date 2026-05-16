@@ -96,6 +96,16 @@ export class PMSettingTab extends PluginSettingTab {
         })
       )
 
+    new Setting(containerEl)
+      .setName('Show description preview on board')
+      .setDesc('Display the first lines of each task description on board cards.')
+      .addToggle((t) =>
+        t.setValue(this.plugin.settings.kanbanShowDescriptionPreview).onChange(async (v) => {
+          this.plugin.settings.kanbanShowDescriptionPreview = v
+          await this.plugin.saveSettings()
+        })
+      )
+
     // ── Notifications ─────────────────────────────────────────────────────────
     new Setting(containerEl).setName('Due date notifications').setHeading()
 

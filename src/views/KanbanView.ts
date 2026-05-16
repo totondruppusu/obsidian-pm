@@ -73,10 +73,18 @@ export class KanbanView implements SubView {
       task,
       priorityColor,
       parentTitle,
+      descriptionPreview: this.getDescriptionPreview(task.description),
       subtaskProgress,
       loggedHours: totalLoggedHours(task),
       overdue: isTaskOverdue(task, this.plugin.settings.statuses)
     }
+  }
+
+  private getDescriptionPreview(description: string): string | undefined {
+    if (!this.plugin.settings.kanbanShowDescriptionPreview) return undefined
+    const normalized = description.replace(/\r\n/g, '\n').trim()
+    if (!normalized) return undefined
+    return normalized.split('\n').slice(0, 6).join('\n').trim()
   }
 
   private findParentTask(taskId: string): Task | null {
