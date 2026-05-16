@@ -6,6 +6,7 @@ export type TaskPriority = 'critical' | 'high' | 'medium' | 'low'
 export type GanttGranularity = 'day' | 'week' | 'month' | 'quarter'
 export type GanttWeekLabel = 'weekNumber' | 'dateRange' | 'both'
 export type ViewMode = 'table' | 'gantt' | 'kanban'
+export type AssigneeInitialsMode = 'firstTwoChars' | 'firstAndSecondWord'
 export type DueDateFilter = 'any' | 'overdue' | 'this-week' | 'this-month' | 'no-date'
 export type TaskType = 'task' | 'milestone' | 'subtask'
 
@@ -112,6 +113,7 @@ export interface PMSettings {
   projectsFolder: string
   defaultView: ViewMode
   taskModalSaveOnClose: boolean
+  assigneeInitialsMode: AssigneeInitialsMode
   ganttGranularity: GanttGranularity
   ganttWeekLabel: GanttWeekLabel
   kanbanShowDescriptionPreview: boolean
@@ -147,6 +149,7 @@ export const DEFAULT_SETTINGS: PMSettings = {
   projectsFolder: 'Projects',
   defaultView: 'table',
   taskModalSaveOnClose: true,
+  assigneeInitialsMode: 'firstTwoChars',
   ganttGranularity: 'week',
   ganttWeekLabel: 'weekNumber',
   kanbanShowDescriptionPreview: false,

@@ -124,7 +124,7 @@ export function renderTaskRow(
     })
   })
 
-  new AssigneesCell(row, task.assignees)
+  new AssigneesCell(row, task.assignees, ctx.plugin.settings.assigneeInitialsMode)
 
   const due = parsePlainDate(task.due)
   const overdue = isTaskOverdue(task, ctx.plugin.settings.statuses)

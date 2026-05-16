@@ -148,7 +148,7 @@ export class ProjectModal extends Modal {
       for (let i = 0; i < this.project.teamMembers.length; i++) {
         const row = memberWrap.createDiv('pm-member-row')
         const name = this.project.teamMembers[i] || '?'
-        new Avatar(row).setName(name)
+        new Avatar(row).setInitialsMode(this.plugin.settings.assigneeInitialsMode).setName(name)
         const input = row.createEl('input', {
           type: 'text',
           value: this.project.teamMembers[i],

@@ -1,10 +1,12 @@
 import { Avatar } from './Avatar'
+import type { AssigneeInitialsMode } from '../../types'
 
 export class AvatarStack {
   el: HTMLElement
   private names: string[] = []
   private max = 3
   private size: 'md' | 'sm' = 'md'
+  private initialsMode: AssigneeInitialsMode = 'firstTwoChars'
 
   constructor(parentEl: HTMLElement) {
     this.el = parentEl.createDiv('pm-avatar-stack')
@@ -28,11 +30,17 @@ export class AvatarStack {
     return this
   }
 
+  setInitialsMode(mode: AssigneeInitialsMode): this {
+    this.initialsMode = mode
+    this.render()
+    return this
+  }
+
   private render(): void {
     this.el.empty()
     const visible = this.names.slice(0, this.max)
     for (const name of visible) {
-      new Avatar(this.el).setName(name).setSize(this.size)
+      new Avatar(this.el).setInitialsMode(this.initialsMode).setName(name).setSize(this.size)
     }
     const overflow = this.names.length - visible.length
     if (overflow > 0) {

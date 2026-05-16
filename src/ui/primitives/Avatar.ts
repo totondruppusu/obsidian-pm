@@ -1,17 +1,24 @@
 import { setTooltip } from 'obsidian'
-import { stringToColor } from '../../utils'
+import type { AssigneeInitialsMode } from '../../types'
+import { getAssigneeInitials, stringToColor } from '../../utils'
 
 export class Avatar {
   el: HTMLSpanElement
+  private initialsMode: AssigneeInitialsMode = 'firstTwoChars'
 
   constructor(parentEl: HTMLElement) {
     this.el = parentEl.createEl('span', { cls: 'pm-avatar' })
   }
 
   setName(name: string): this {
-    this.el.setText(name.slice(0, 2).toUpperCase())
+    this.el.setText(getAssigneeInitials(name, this.initialsMode))
     this.el.style.background = stringToColor(name)
     setTooltip(this.el, name)
+    return this
+  }
+
+  setInitialsMode(mode: AssigneeInitialsMode): this {
+    this.initialsMode = mode
     return this
   }
 
