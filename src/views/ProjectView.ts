@@ -147,9 +147,17 @@ export class ProjectView extends ItemView {
   }
 
   private loadFilterFromSettings(): void {
-    const saved = this.plugin.settings.projectFilters[this.filePath]
+    const saved = this.plugin.getProjectFilter(this.filePath)
     if (saved) {
-      this.filter = saved.filter
+      this.filter = {
+        text: saved.filter.text,
+        statuses: [...saved.filter.statuses],
+        priorities: [...saved.filter.priorities],
+        assignees: [...saved.filter.assignees],
+        tags: [...saved.filter.tags],
+        dueDateFilter: saved.filter.dueDateFilter,
+        showArchived: saved.filter.showArchived
+      }
       this.activeSavedViewId = saved.activeSavedViewId
     } else {
       this.filter = makeDefaultFilter()
@@ -159,11 +167,18 @@ export class ProjectView extends ItemView {
 
   private async persistFilter(): Promise<void> {
     if (!this.filePath) return
-    this.plugin.settings.projectFilters[this.filePath] = {
-      filter: this.filter,
+    await this.plugin.setProjectFilter(this.filePath, {
+      filter: {
+        text: this.filter.text,
+        statuses: [...this.filter.statuses],
+        priorities: [...this.filter.priorities],
+        assignees: [...this.filter.assignees],
+        tags: [...this.filter.tags],
+        dueDateFilter: this.filter.dueDateFilter,
+        showArchived: this.filter.showArchived
+      },
       activeSavedViewId: this.activeSavedViewId
-    }
-    await this.plugin.saveSettings()
+    })
   }
 
   private renderMissingProject(): void {
@@ -250,7 +265,7 @@ export class ProjectView extends ItemView {
     }
     this.project.savedViews.push(sv)
     this.activeSavedViewId = sv.id
-    await this.plugin.store.saveProject(this.project)
+    await this.plugin.store.saveProjectMetadata(this.project)
     void this.persistFilter()
     this.header?.refresh()
   }
@@ -266,7 +281,7 @@ export class ProjectView extends ItemView {
       sv.sortKey = ts.sortKey
       sv.sortDir = ts.sortDir
     }
-    await this.plugin.store.saveProject(this.project)
+    await this.plugin.store.saveProjectMetadata(this.project)
     this.header?.refresh()
   }
 
@@ -274,7 +289,7 @@ export class ProjectView extends ItemView {
     if (!this.project) return
     this.project.savedViews = this.project.savedViews.filter((v) => v.id !== id)
     if (this.activeSavedViewId === id) this.activeSavedViewId = null
-    await this.plugin.store.saveProject(this.project)
+    await this.plugin.store.saveProjectMetadata(this.project)
     void this.persistFilter()
     this.header?.refresh()
   }
@@ -310,7 +325,7 @@ export class ProjectView extends ItemView {
       safeAsync(async () => {
         if (!this.project) return
         this.project.title = this.titleEl2.textContent?.trim() ?? this.project.title
-        await this.plugin.store.saveProject(this.project)
+        await this.plugin.store.saveProjectMetadata(this.project)
       })
     )
 

@@ -232,7 +232,7 @@ export class ProjectModal extends Modal {
             await this.plugin.store.ensureFolder(this.plugin.settings.projectsFolder)
           }
 
-          await this.plugin.store.saveProject(this.project)
+          await this.plugin.store.saveProjectMetadata(this.project)
           await this.onSave(this.project)
           this.close()
         })

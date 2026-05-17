@@ -103,11 +103,25 @@ export function getAssigneeInitials(name: string, mode: AssigneeInitialsMode): s
 /** Wrap an async callback so unhandled rejections show a Notice and log to console */
 export function safeAsync<A extends unknown[]>(fn: (...args: A) => Promise<void>): (...args: A) => void {
   return (...args: A) => {
-    fn(...args).catch((err: unknown) => {
-      console.error('[PM]', err)
-      new Notice('Something went wrong. Check the console for details.')
-    })
+    fn(...args).catch((err: unknown) => reportAsyncError(err))
   }
+}
+
+function toUserFacingErrorMessage(err: unknown): string {
+  if (!(err instanceof Error)) return 'Something went wrong. Check the console for details.'
+  const msg = err.message?.trim() ?? ''
+  if (msg.startsWith('Conflict:')) {
+    const detail = msg.slice('Conflict:'.length).trim()
+    return detail
+      ? `Sync conflict: ${detail}. Reload the project and apply your change again.`
+      : 'Sync conflict detected. Reload the project and apply your change again.'
+  }
+  return 'Something went wrong. Check the console for details.'
+}
+
+export function reportAsyncError(err: unknown): void {
+  console.error('[PM]', err)
+  new Notice(toUserFacingErrorMessage(err))
 }
 
 const SVG_NS = 'http://www.w3.org/2000/svg'

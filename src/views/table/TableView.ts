@@ -162,10 +162,14 @@ export class TableView implements SubView {
     for (const id of ids) {
       const task = findTask(this.project.tasks, id)
       if (task && !task[field].includes(value)) {
-        task[field] = [...task[field], value]
+        const next = [...task[field], value]
+        if (field === 'assignees') {
+          await this.plugin.store.updateTask(this.project, id, { assignees: next })
+        } else {
+          await this.plugin.store.updateTask(this.project, id, { tags: next })
+        }
       }
     }
-    await this.plugin.store.saveProject(this.project)
   }
 
   private updateBulkBar(): void {

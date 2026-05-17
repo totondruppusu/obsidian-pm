@@ -1,5 +1,5 @@
 import { MarkdownView, Plugin, Notice } from 'obsidian'
-import { DEFAULT_SETTINGS, PMSettings, Project } from './types'
+import { DEFAULT_SETTINGS, PMSettings, Project, type PerProjectFilter } from './types'
 import { flattenTasks } from './store/TaskTreeOps'
 import { ProjectStore } from './store'
 import { PMSettingTab } from './settings'
@@ -13,6 +13,7 @@ import { safeAsync } from './utils'
 
 export default class PMPlugin extends Plugin {
   settings: PMSettings = { ...DEFAULT_SETTINGS }
+  localProjectFilters: Record<string, PerProjectFilter> = {}
   store!: ProjectStore
   notifier!: Notifier
   router!: PMViewRouter
@@ -43,6 +44,7 @@ export default class PMPlugin extends Plugin {
 
   async onload(): Promise<void> {
     await this.loadSettings()
+    this.loadLocalProjectFilters()
     this.store = new ProjectStore(this.app, () => this.settings.statuses)
     this.notifier = new Notifier(this)
     this.router = new PMViewRouter(this)
@@ -176,7 +178,7 @@ export default class PMPlugin extends Plugin {
   }
 
   async cleanupStaleProjectFilters(): Promise<void> {
-    const filters = this.settings.projectFilters
+    const filters = this.localProjectFilters
     const cleaned: typeof filters = {}
     let dirty = false
     for (const [path, entry] of Object.entries(filters)) {
@@ -187,13 +189,55 @@ export default class PMPlugin extends Plugin {
       }
     }
     if (dirty) {
-      this.settings.projectFilters = cleaned
-      await this.saveSettings()
+      this.localProjectFilters = cleaned
+      this.saveLocalProjectFilters()
     }
   }
 
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings)
+  }
+
+  getProjectFilter(path: string): PerProjectFilter | null {
+    return this.localProjectFilters[path] ?? this.settings.projectFilters[path] ?? null
+  }
+
+  async setProjectFilter(path: string, filter: PerProjectFilter): Promise<void> {
+    this.localProjectFilters[path] = filter
+    this.saveLocalProjectFilters()
+  }
+
+  private localFilterStorageKey(): string {
+    return `${this.manifest.id}:projectFilters:${this.app.vault.getName()}`
+  }
+
+  private loadLocalProjectFilters(): void {
+    const key = this.localFilterStorageKey()
+    try {
+      const raw = globalThis.localStorage.getItem(key)
+      if (raw) {
+        const parsed = JSON.parse(raw) as Record<string, PerProjectFilter>
+        this.localProjectFilters = parsed ?? {}
+        return
+      }
+    } catch (err) {
+      console.warn('[PM] Failed to load local project filters, falling back to shared settings.', err)
+    }
+    // One-time fallback/migration from shared settings.
+    this.localProjectFilters = JSON.parse(JSON.stringify(this.settings.projectFilters ?? {})) as Record<
+      string,
+      PerProjectFilter
+    >
+    this.saveLocalProjectFilters()
+  }
+
+  private saveLocalProjectFilters(): void {
+    const key = this.localFilterStorageKey()
+    try {
+      globalThis.localStorage.setItem(key, JSON.stringify(this.localProjectFilters))
+    } catch (err) {
+      console.warn('[PM] Failed to persist local project filters.', err)
+    }
   }
 
   showNotice(msg: string, duration = 3000): void {
@@ -231,7 +275,6 @@ export default class PMPlugin extends Plugin {
     openTaskModal(this, project, {
       parentId,
       onSave: async () => {
-        await this.store.saveProject(project)
         await this.router.openProjectByPath(project.filePath)
       }
     })

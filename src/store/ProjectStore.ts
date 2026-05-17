@@ -17,6 +17,44 @@ import { hydrateProjectFromFrontmatter, hydrateTaskFromFile, hydrateTasks } from
 import { serializeProject, serializeTask, taskFilePath } from './YamlSerializer'
 import { ensureFolder } from './vaultFs'
 
+interface TaskSnapshot {
+  id: string
+  title: string
+  description: string
+  type: Task['type']
+  status: Task['status']
+  priority: Task['priority']
+  start: string
+  due: string
+  progress: number
+  assignees: string[]
+  tags: string[]
+  dependencies: string[]
+  collapsed: boolean
+  createdAt: string
+  updatedAt: string
+  parentId: null | string
+  subtaskIds: string[]
+  recurrence?: Task['recurrence']
+  timeEstimate?: number
+  timeLogs?: Task['timeLogs']
+  customFields: Record<string, unknown>
+}
+
+interface ProjectSnapshot {
+  id: string
+  title: string
+  description: string
+  color: string
+  icon: string
+  createdAt: string
+  updatedAt: string
+  customFields: Project['customFields']
+  teamMembers: string[]
+  savedViews: Project['savedViews']
+  taskIds: string[]
+}
+
 /**
  * Handles all read/write operations against the Obsidian vault.
  *
@@ -30,6 +68,10 @@ import { ensureFolder } from './vaultFs'
 export class ProjectStore {
   /** Per-project promise chains to serialize concurrent saves */
   private saveQueues = new Map<string, Promise<void>>()
+  /** Last-seen baseline per task (project-scoped key) for optimistic concurrency */
+  private taskBases = new Map<string, { hash: string; snapshot: TaskSnapshot }>()
+  /** Last-seen baseline per project file for optimistic concurrency */
+  private projectBases = new Map<string, { hash: string; snapshot: ProjectSnapshot }>()
 
   constructor(
     private app: App,
@@ -81,8 +123,10 @@ export class ProjectStore {
       } else {
         const taskFolder = this.projectTaskFolder(project)
         const taskIds = Array.isArray(frontmatter.taskIds) ? (frontmatter.taskIds as string[]) : []
-        project.tasks = await this.loadTasksFromFolder(taskFolder, taskIds)
+        project.tasks = await this.loadTasksFromFolder(taskFolder, taskIds, file.path)
       }
+
+      this.recordProjectBase(project, content)
 
       return project
     } catch (e) {
@@ -92,7 +136,7 @@ export class ProjectStore {
     }
   }
 
-  private async loadTasksFromFolder(folderPath: string, topLevelIds: string[]): Promise<Task[]> {
+  private async loadTasksFromFolder(folderPath: string, topLevelIds: string[], projectFilePath: string): Promise<Task[]> {
     const folder = this.app.vault.getAbstractFileByPath(folderPath)
     if (!(folder instanceof TFolder)) return []
 
@@ -103,7 +147,7 @@ export class ProjectStore {
 
     const files = this.app.vault.getMarkdownFiles().filter((f) => f.path.startsWith(folderPath + '/'))
     for (const file of files) {
-      const { task, subtaskIds, parentId } = await this.loadTaskFile(file)
+      const { task, subtaskIds, parentId, rawContent } = await this.loadTaskFile(file)
       if (task) {
         if (file.path.startsWith(archivePrefix)) {
           task.archived = true
@@ -111,6 +155,9 @@ export class ProjectStore {
         taskMap.set(task.id, task)
         if (subtaskIds.length) subtaskIdsMap.set(task.id, subtaskIds)
         if (parentId) parentIdMap.set(task.id, parentId)
+        if (rawContent !== null) {
+          this.recordTaskBase(projectFilePath, this.toTaskSnapshot(task, parentId, subtaskIds), rawContent)
+        }
       }
     }
 
@@ -165,15 +212,17 @@ export class ProjectStore {
     return result
   }
 
-  async loadTaskFile(file: TFile): Promise<{ task: Task | null; subtaskIds: string[]; parentId: string | null }> {
+  async loadTaskFile(
+    file: TFile
+  ): Promise<{ task: Task | null; subtaskIds: string[]; parentId: string | null; rawContent: null | string }> {
     try {
       const content = await this.app.vault.read(file)
       const { frontmatter, body } = parseFrontmatter(content)
       if (!frontmatter || frontmatter[TASK_FRONTMATTER_KEY] !== true) {
-        return { task: null, subtaskIds: [], parentId: null }
+        return { task: null, subtaskIds: [], parentId: null, rawContent: null }
       }
 
-      return hydrateTaskFromFile(frontmatter, body, file.path)
+      return { ...hydrateTaskFromFile(frontmatter, body, file.path), rawContent: content }
     } catch (e) {
       if (e instanceof Error && e.message.includes('ENOENT')) {
         console.warn(`[PM] Task file no longer exists, skipping: ${file.path}`)
@@ -181,7 +230,7 @@ export class ProjectStore {
         console.error(`[PM] Failed to load task ${file.path}:`, e)
         new Notice(`Project Manager: Failed to load task "${file.basename}". Check console for details.`)
       }
-      return { task: null, subtaskIds: [], parentId: null }
+      return { task: null, subtaskIds: [], parentId: null, rawContent: null }
     }
   }
 
@@ -214,6 +263,7 @@ export class ProjectStore {
       } else {
         await this.app.vault.create(project.filePath, content)
       }
+      this.recordProjectBase(project, content)
     } catch (e) {
       console.error(`[PM] Failed to save project "${project.title}":`, e)
       new Notice(`Project Manager: Failed to save "${project.title}". Check console for details.`)
@@ -264,6 +314,8 @@ export class ProjectStore {
           await this.app.fileManager.trashFile(oldFile)
         }
       }
+      const parentId = parentTask?.id ?? null
+      this.recordTaskBase(project.filePath, this.toTaskSnapshot(task, parentId, task.subtasks.map((s) => s.id)), content)
     } catch (e) {
       console.error(`[PM] Failed to save task "${task.title}" (${task.id}):`, e)
       throw e
@@ -324,15 +376,19 @@ export class ProjectStore {
   }
 
   async updateTask(project: Project, taskId: string, patch: Partial<Task>): Promise<void> {
+    const changed = new Set<keyof Task>()
+    for (const key of Object.keys(patch) as Array<keyof Task>) changed.add(key)
     updateTaskInTree(project.tasks, taskId, patch)
-    await this.saveProject(project)
+    await this.persistTaskEdits(project, taskId, changed)
   }
 
   async updateTasks(project: Project, taskIds: string[], patch: Partial<Task>): Promise<void> {
+    const changed = new Set<keyof Task>()
+    for (const key of Object.keys(patch) as Array<keyof Task>) changed.add(key)
     for (const id of taskIds) {
       updateTaskInTree(project.tasks, id, patch)
+      await this.persistTaskEdits(project, id, changed)
     }
-    await this.saveProject(project)
   }
 
   async deleteTasks(project: Project, taskIds: string[]): Promise<void> {
@@ -404,10 +460,326 @@ export class ProjectStore {
     const { patches } = computeSchedule(project.tasks, changedTaskId, statuses)
     if (patches.length === 0) return 0
 
+    const touched = new Set<string>()
+    const changed = new Set<keyof Task>(['start', 'due'])
     for (const p of patches) {
       updateTaskInTree(project.tasks, p.taskId, { start: p.start, due: p.due })
+      touched.add(p.taskId)
     }
-    await this.saveProject(project)
+    for (const taskId of touched) {
+      await this.persistTaskEdits(project, taskId, changed)
+    }
     return patches.length
+  }
+
+  async saveTaskAndMove(
+    project: Project,
+    taskId: string,
+    patch: Partial<Task>,
+    nextParentId: null | string,
+    runSchedule: boolean,
+    statuses: StatusConfig[] = []
+  ): Promise<void> {
+    const flat = flattenTasks(project.tasks)
+    const before = flat.find((f) => f.task.id === taskId)
+    if (!before) return
+    const previousParentId = before.parentId
+    const moved = nextParentId !== previousParentId
+    const changed = new Set<keyof Task>()
+    for (const key of Object.keys(patch) as Array<keyof Task>) changed.add(key)
+
+    if (Object.keys(patch).length > 0) {
+      updateTaskInTree(project.tasks, taskId, patch)
+    }
+    if (moved) {
+      const task = findTask(project.tasks, taskId)
+      if (task) {
+        deleteTaskFromTree(project.tasks, taskId)
+        addTaskToTree(project.tasks, task, nextParentId)
+        task.updatedAt = new Date().toISOString()
+      }
+    }
+
+    await this.persistTaskEdits(project, taskId, changed, {
+      oldParentId: previousParentId,
+      newParentId: nextParentId,
+      moved
+    })
+
+    if (runSchedule) {
+      await this.scheduleAfterChange(project, taskId, statuses)
+    }
+  }
+
+  async saveProjectMetadata(project: Project): Promise<void> {
+    project.updatedAt = new Date().toISOString()
+    await this.persistProjectFile(project)
+  }
+
+  private toTaskSnapshot(task: Task, parentId: null | string, subtaskIds: string[]): TaskSnapshot {
+    return {
+      id: task.id,
+      title: task.title,
+      description: task.description,
+      type: task.type,
+      status: task.status,
+      priority: task.priority,
+      start: task.start,
+      due: task.due,
+      progress: task.progress,
+      assignees: [...task.assignees],
+      tags: [...task.tags],
+      dependencies: [...task.dependencies],
+      collapsed: task.collapsed,
+      createdAt: task.createdAt,
+      updatedAt: task.updatedAt,
+      recurrence: task.recurrence ? { ...task.recurrence } : undefined,
+      timeEstimate: task.timeEstimate,
+      timeLogs: task.timeLogs ? task.timeLogs.map((l) => ({ ...l })) : undefined,
+      customFields: { ...task.customFields },
+      parentId,
+      subtaskIds: [...subtaskIds]
+    }
+  }
+
+  private toProjectSnapshot(project: Project): ProjectSnapshot {
+    return {
+      id: project.id,
+      title: project.title,
+      description: project.description,
+      color: project.color,
+      icon: project.icon,
+      createdAt: project.createdAt,
+      updatedAt: project.updatedAt,
+      customFields: project.customFields.map((f) => ({ ...f })),
+      teamMembers: [...project.teamMembers],
+      savedViews: project.savedViews.map((v) => ({ ...v, filter: { ...v.filter } })),
+      taskIds: project.tasks.map((t) => t.id)
+    }
+  }
+
+  private baseKey(projectFilePath: string, taskId: string): string {
+    return `${projectFilePath}::${taskId}`
+  }
+
+  private hashText(input: string): string {
+    let h = 2166136261
+    for (let i = 0; i < input.length; i++) {
+      h ^= input.charCodeAt(i)
+      h = Math.imul(h, 16777619)
+    }
+    return (h >>> 0).toString(16)
+  }
+
+  private recordTaskBase(projectFilePath: string, snapshot: TaskSnapshot, rawContent: string): void {
+    this.taskBases.set(this.baseKey(projectFilePath, snapshot.id), {
+      hash: this.hashText(rawContent),
+      snapshot: JSON.parse(JSON.stringify(snapshot)) as TaskSnapshot
+    })
+  }
+
+  private recordProjectBase(project: Project, rawContent: string): void {
+    this.projectBases.set(project.filePath, {
+      hash: this.hashText(rawContent),
+      snapshot: this.toProjectSnapshot(project)
+    })
+  }
+
+  private valuesEqual(a: unknown, b: unknown): boolean {
+    return JSON.stringify(a) === JSON.stringify(b)
+  }
+
+  private async persistTaskEdits(
+    project: Project,
+    taskId: string,
+    changedFields: Set<keyof Task>,
+    moveCtx?: { moved: boolean; oldParentId: null | string; newParentId: null | string }
+  ): Promise<void> {
+    const task = findTask(project.tasks, taskId)
+    if (!task) return
+    const previousPath = task.filePath ?? null
+    const flat = flattenTasks(project.tasks)
+    const info = flat.find((f) => f.task.id === taskId)
+    const parentId = info?.parentId ?? null
+    const parentTask = parentId ? findTask(project.tasks, parentId) : null
+    const folder = task.archived ? normalizePath(this.projectTaskFolder(project) + '/Archive') : this.projectTaskFolder(project)
+    if (task.archived) await this.ensureFolder(folder)
+
+    await this.saveTaskFileScoped(task, project, parentTask, folder, changedFields, parentId)
+    const renamed = previousPath !== null && task.filePath !== previousPath
+
+    if (moveCtx?.moved) {
+      const oldParent = moveCtx.oldParentId ? findTask(project.tasks, moveCtx.oldParentId) : null
+      const newParent = moveCtx.newParentId ? findTask(project.tasks, moveCtx.newParentId) : null
+      if (oldParent && oldParent.id !== task.id) {
+        const oldParentParent = flat.find((f) => f.task.id === oldParent.id)?.parentId ?? null
+        await this.saveTaskFileScoped(
+          oldParent,
+          project,
+          oldParentParent ? findTask(project.tasks, oldParentParent) : null,
+          oldParent.archived ? normalizePath(this.projectTaskFolder(project) + '/Archive') : this.projectTaskFolder(project),
+          new Set<keyof Task>(),
+          oldParentParent
+        )
+      }
+      if (newParent && newParent.id !== task.id) {
+        const newFlat = flattenTasks(project.tasks)
+        const newParentParent = newFlat.find((f) => f.task.id === newParent.id)?.parentId ?? null
+        await this.saveTaskFileScoped(
+          newParent,
+          project,
+          newParentParent ? findTask(project.tasks, newParentParent) : null,
+          newParent.archived ? normalizePath(this.projectTaskFolder(project) + '/Archive') : this.projectTaskFolder(project),
+          new Set<keyof Task>(),
+          newParentParent
+        )
+      }
+      project.updatedAt = new Date().toISOString()
+      await this.persistProjectFile(project)
+    } else if (renamed) {
+      if (parentTask) {
+        const latest = flattenTasks(project.tasks)
+        const parentParentId = latest.find((f) => f.task.id === parentTask.id)?.parentId ?? null
+        await this.saveTaskFileScoped(
+          parentTask,
+          project,
+          parentParentId ? findTask(project.tasks, parentParentId) : null,
+          parentTask.archived ? normalizePath(this.projectTaskFolder(project) + '/Archive') : this.projectTaskFolder(project),
+          new Set<keyof Task>(),
+          parentParentId
+        )
+      }
+      // Keep project task wiki-links valid when a task file slug changes.
+      project.updatedAt = new Date().toISOString()
+      await this.persistProjectFile(project)
+    }
+  }
+
+  private async saveTaskFileScoped(
+    task: Task,
+    project: Project,
+    parentTask: Task | null,
+    folder: string,
+    changedFields: Set<keyof Task>,
+    parentId: null | string
+  ): Promise<void> {
+    await this.ensureFolder(folder)
+    const filePath = normalizePath(taskFilePath(task.title, task.id, folder))
+    const oldFilePath = task.filePath && task.filePath !== filePath ? task.filePath : null
+    task.filePath = filePath
+    const subtaskIds = task.subtasks.map((s) => s.id)
+    const localSnapshot = this.toTaskSnapshot(task, parentId, subtaskIds)
+    const base = this.taskBases.get(this.baseKey(project.filePath, task.id))
+    let content = serializeTask(task, project, parentTask, this.getStatuses())
+
+    const existing = this.app.vault.getAbstractFileByPath(filePath)
+    if (existing instanceof TFile) {
+      const remoteContent = await this.app.vault.read(existing)
+      if (base && this.hashText(remoteContent) !== base.hash) {
+        const { frontmatter, body } = parseFrontmatter(remoteContent)
+        if (!frontmatter || frontmatter[TASK_FRONTMATTER_KEY] !== true) {
+          throw new Error(`Conflict: task file changed externally and cannot be parsed (${filePath})`)
+        }
+        const remoteParsed = hydrateTaskFromFile(frontmatter, body, filePath)
+        const remoteSnapshot = this.toTaskSnapshot(remoteParsed.task, remoteParsed.parentId, remoteParsed.subtaskIds)
+        const structuralKeys: Array<keyof TaskSnapshot> = ['parentId', 'subtaskIds']
+        for (const k of structuralKeys) {
+          if (!this.valuesEqual(remoteSnapshot[k], base.snapshot[k])) {
+            throw new Error(`Conflict: task hierarchy changed externally for "${task.title}"`)
+          }
+        }
+        for (const key of changedFields) {
+          if (key === 'updatedAt') continue
+          const k = key as keyof TaskSnapshot
+          if (!this.valuesEqual(remoteSnapshot[k], base.snapshot[k]) && !this.valuesEqual(localSnapshot[k], base.snapshot[k])) {
+            throw new Error(`Conflict: field "${String(key)}" changed externally for "${task.title}"`)
+          }
+        }
+        const merged = { ...remoteSnapshot, ...localSnapshot, updatedAt: localSnapshot.updatedAt }
+        Object.assign(task, {
+          title: merged.title,
+          description: merged.description,
+          type: merged.type,
+          status: merged.status,
+          priority: merged.priority,
+          start: merged.start,
+          due: merged.due,
+          progress: merged.progress,
+          assignees: [...merged.assignees],
+          tags: [...merged.tags],
+          dependencies: [...merged.dependencies],
+          collapsed: merged.collapsed,
+          createdAt: merged.createdAt,
+          updatedAt: merged.updatedAt,
+          recurrence: merged.recurrence ? { ...merged.recurrence } : undefined,
+          timeEstimate: merged.timeEstimate,
+          timeLogs: merged.timeLogs ? merged.timeLogs.map((l) => ({ ...l })) : undefined,
+          customFields: { ...merged.customFields }
+        })
+        content = serializeTask(task, project, parentTask, this.getStatuses())
+      }
+      await this.app.vault.modify(existing, content)
+    } else {
+      await this.app.vault.create(filePath, content)
+    }
+
+    if (oldFilePath) {
+      const oldFile = this.app.vault.getAbstractFileByPath(oldFilePath)
+      if (oldFile instanceof TFile) {
+        await this.app.fileManager.trashFile(oldFile)
+      }
+    }
+    this.recordTaskBase(project.filePath, this.toTaskSnapshot(task, parentId, subtaskIds), content)
+  }
+
+  private async persistProjectFile(project: Project): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(project.filePath)
+    const content = serializeProject(project, this.getStatuses())
+    const base = this.projectBases.get(project.filePath)
+    if (file instanceof TFile) {
+      if (base) {
+        const remote = await this.app.vault.read(file)
+        if (this.hashText(remote) !== base.hash) {
+          const { frontmatter, body } = parseFrontmatter(remote)
+          if (!frontmatter || frontmatter[FRONTMATTER_KEY] !== true) {
+            throw new Error(`Conflict: project file changed externally and cannot be parsed (${project.filePath})`)
+          }
+          const remoteProject = hydrateProjectFromFrontmatter(frontmatter, body, file.path, file.basename)
+          const remoteSnapshot = this.toProjectSnapshot(remoteProject)
+          remoteSnapshot.taskIds = Array.isArray(frontmatter.taskIds) ? (frontmatter.taskIds as string[]) : []
+          const localSnapshot = this.toProjectSnapshot(project)
+          const keyFields: Array<keyof ProjectSnapshot> = [
+            'title',
+            'description',
+            'color',
+            'icon',
+            'customFields',
+            'teamMembers',
+            'savedViews'
+          ]
+          for (const k of keyFields) {
+            if (
+              !this.valuesEqual(remoteSnapshot[k], base.snapshot[k]) &&
+              !this.valuesEqual(localSnapshot[k], base.snapshot[k])
+            ) {
+              throw new Error(`Conflict: project field "${String(k)}" changed externally`)
+            }
+          }
+          const baseIds = base.snapshot.taskIds
+          const remoteIdsChanged = !this.valuesEqual(remoteSnapshot.taskIds, baseIds)
+          const localIdsChanged = !this.valuesEqual(localSnapshot.taskIds, baseIds)
+          if (remoteIdsChanged && !localIdsChanged) {
+            throw new Error('Conflict: project task ordering changed externally')
+          }
+          if (remoteIdsChanged && localIdsChanged && !this.valuesEqual(remoteSnapshot.taskIds, localSnapshot.taskIds)) {
+            throw new Error('Conflict: project task ordering changed concurrently')
+          }
+        }
+      }
+      await this.app.vault.modify(file, content)
+    } else {
+      await this.app.vault.create(project.filePath, content)
+    }
+    this.recordProjectBase(project, content)
   }
 }

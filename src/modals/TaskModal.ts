@@ -2,7 +2,7 @@ import { App, ButtonComponent, Component, ExtraButtonComponent, Modal, MarkdownR
 import type PMPlugin from '../main'
 import { Project, Task, makeTask } from '../types'
 import { flattenTasks } from '../store/TaskTreeOps'
-import { safeAsync, getDefaultStatusId } from '../utils'
+import { safeAsync, getDefaultStatusId, reportAsyncError } from '../utils'
 import { renderStatusDot } from '../ui/StatusBadge'
 import { confirmDialog } from '../ui/ModalFactory'
 import { renderTaskFormFields } from './TaskFormFields'
@@ -66,7 +66,9 @@ export class TaskModal extends Modal {
       !this.saved &&
       this.shouldAutoPersistOnClose()
     ) {
-      void this.persistTask()
+      void this.persistTask().catch((err) => {
+        reportAsyncError(err)
+      })
     }
     this.noteSuggest?.destroy()
     this.noteSuggest = null
@@ -109,13 +111,17 @@ export class TaskModal extends Modal {
   private async runPersist(): Promise<void> {
     if (this.isNew) {
       await this.plugin.store.insertTask(this.project, this.task, this.parentId)
-    } else if (this.parentId !== this.originalParentId) {
-      await this.plugin.store.updateTask(this.project, this.task.id, this.task)
-      await this.plugin.store.moveTask(this.project, this.task.id, this.parentId)
     } else {
-      await this.plugin.store.updateTask(this.project, this.task.id, this.task)
+      await this.plugin.store.saveTaskAndMove(
+        this.project,
+        this.task.id,
+        this.task,
+        this.parentId,
+        this.plugin.settings.autoSchedule,
+        this.plugin.settings.statuses
+      )
     }
-    if (this.plugin.settings.autoSchedule) {
+    if (this.isNew && this.plugin.settings.autoSchedule) {
       await this.plugin.store.scheduleAfterChange(this.project, this.task.id, this.plugin.settings.statuses)
     }
     await this.onSave(this.task)
