@@ -4,15 +4,14 @@ import { makeProject, makeTask } from '../types'
 
 describe('ProjectStore save mode routing', () => {
   it('defaults saveProject to projectAndTasks', async () => {
-    const store = new ProjectStore({} as never) as ProjectStore & {
-      doSaveProject: ReturnType<typeof vi.fn>
-    }
-    store.doSaveProject = vi.fn().mockResolvedValue(undefined)
+    const store = new ProjectStore({} as never)
+    const internal = store as unknown as { doSaveProject: ReturnType<typeof vi.fn> }
+    internal.doSaveProject = vi.fn().mockResolvedValue(undefined)
 
     const project = makeProject('P', 'Projects/P.md')
     await store.saveProject(project)
 
-    expect(store.doSaveProject).toHaveBeenCalledWith(project, 'projectAndTasks')
+    expect(internal.doSaveProject).toHaveBeenCalledWith(project, 'projectAndTasks')
   })
 
   it('routes updateTask through taskOnly mode', async () => {
