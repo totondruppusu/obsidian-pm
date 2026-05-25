@@ -119,6 +119,7 @@ export interface PMSettings {
   notificationsEnabled: boolean
   notificationLeadDays: number
   autoSchedule: boolean
+  autoMergeConflicts: boolean
   kanbanShowSubtasks: boolean
   saveTaskOnClose: boolean
   kanbanShowDescriptionPreview: boolean
@@ -156,6 +157,7 @@ export const DEFAULT_SETTINGS: PMSettings = {
   notificationsEnabled: true,
   notificationLeadDays: 2,
   autoSchedule: true,
+  autoMergeConflicts: false,
   saveTaskOnClose: true,
   projectFilters: {}
 }

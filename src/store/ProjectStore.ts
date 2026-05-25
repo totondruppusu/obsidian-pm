@@ -16,6 +16,11 @@ import { parseFrontmatter, FRONTMATTER_KEY, TASK_FRONTMATTER_KEY } from './YamlP
 import { hydrateProjectFromFrontmatter, hydrateTaskFromFile, hydrateTasks } from './YamlHydrator'
 import { serializeProject, serializeTask, taskFilePath } from './YamlSerializer'
 import { ensureFolder } from './vaultFs'
+import {
+  mergeProjectConflictsForPath,
+  mergeProjectConflictsInFolder,
+  mergeTaskConflictsForProject
+} from './ConflictMerge'
 
 /**
  * Pick a save path for a task. New tasks get the bare-slug name from
@@ -46,6 +51,8 @@ export class TaskFileNameConflictError extends Error {
   }
 }
 
+export type SaveMode = 'taskOnly' | 'projectAndTasks'
+
 function fileNameFromPath(path: string): string {
   return path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, '')
 }
@@ -66,7 +73,8 @@ export class ProjectStore {
 
   constructor(
     private app: App,
-    private getStatuses: () => StatusConfig[] = () => []
+    private getStatuses: () => StatusConfig[] = () => [],
+    private getAutoMergeConflicts: () => boolean = () => false
   ) {}
 
   // ─── Folder helpers ────────────────────────────────────────────────────────
@@ -84,6 +92,9 @@ export class ProjectStore {
 
   async loadAllProjects(folder: string): Promise<Project[]> {
     await this.ensureFolder(folder)
+    if (this.getAutoMergeConflicts()) {
+      await mergeProjectConflictsInFolder(this.app, folder)
+    }
     const projects: Project[] = []
     const files = this.app.vault
       .getMarkdownFiles()
@@ -101,17 +112,29 @@ export class ProjectStore {
 
   async loadProject(file: TFile): Promise<Project | null> {
     try {
-      const content = await this.app.vault.read(file)
+      let projectFile = file
+      if (this.getAutoMergeConflicts()) {
+        const canonicalPath = await mergeProjectConflictsForPath(this.app, file.path)
+        const canonicalFile = this.app.vault.getAbstractFileByPath(canonicalPath)
+        if (canonicalFile instanceof TFile) {
+          projectFile = canonicalFile
+        }
+      }
+
+      const content = await this.app.vault.read(projectFile)
       const { frontmatter, body } = parseFrontmatter(content)
       if (!frontmatter || frontmatter[FRONTMATTER_KEY] !== true) return null
 
       const hasEmbeddedTasks = Array.isArray(frontmatter.tasks) && frontmatter.tasks.length > 0
 
-      const project = hydrateProjectFromFrontmatter(frontmatter, body, file.path, file.basename)
+      const project = hydrateProjectFromFrontmatter(frontmatter, body, projectFile.path, projectFile.basename)
 
       if (hasEmbeddedTasks) {
         project.tasks = hydrateTasks((frontmatter.tasks as unknown[]) ?? [])
       } else {
+        if (this.getAutoMergeConflicts()) {
+          await mergeTaskConflictsForProject(this.app, project)
+        }
         const taskFolder = this.projectTaskFolder(project)
         const taskIds = Array.isArray(frontmatter.taskIds) ? (frontmatter.taskIds as string[]) : []
         project.tasks = await this.loadTasksFromFolder(taskFolder, taskIds)
@@ -220,10 +243,10 @@ export class ProjectStore {
 
   // ─── Save ──────────────────────────────────────────────────────────────────
 
-  async saveProject(project: Project): Promise<void> {
+  async saveProject(project: Project, mode: SaveMode = 'projectAndTasks'): Promise<void> {
     const key = project.filePath
     const prev = this.saveQueues.get(key) ?? Promise.resolve()
-    const next = prev.then(() => this.doSaveProject(project))
+    const next = prev.then(() => this.doSaveProject(project, mode))
     this.saveQueues.set(
       key,
       next.catch(() => {})
@@ -231,21 +254,33 @@ export class ProjectStore {
     return next
   }
 
-  private async doSaveProject(project: Project): Promise<void> {
+  private async doSaveProject(project: Project, mode: SaveMode): Promise<void> {
     try {
-      project.updatedAt = new Date().toISOString()
+      if (this.getAutoMergeConflicts()) {
+        const folder = project.filePath.slice(0, project.filePath.lastIndexOf('/'))
+        const canonicalById = await mergeProjectConflictsInFolder(this.app, folder)
+        project.filePath =
+          canonicalById.get(project.id) ?? (await mergeProjectConflictsForPath(this.app, project.filePath))
+        await mergeTaskConflictsForProject(this.app, project)
+      }
+
+      if (mode === 'projectAndTasks') {
+        project.updatedAt = new Date().toISOString()
+      }
 
       const taskFolder = this.projectTaskFolder(project)
       await this.ensureFolder(taskFolder)
 
       await this.saveAllTasks(project.tasks, project, null, taskFolder)
 
-      const content = serializeProject(project, this.getStatuses())
-      const file = this.app.vault.getAbstractFileByPath(project.filePath)
-      if (file instanceof TFile) {
-        await this.app.vault.modify(file, content)
-      } else {
-        await this.app.vault.create(project.filePath, content)
+      if (mode === 'projectAndTasks') {
+        const content = serializeProject(project, this.getStatuses())
+        const file = this.app.vault.getAbstractFileByPath(project.filePath)
+        if (file instanceof TFile) {
+          await this.app.vault.modify(file, content)
+        } else {
+          await this.app.vault.create(project.filePath, content)
+        }
       }
     } catch (e) {
       if (e instanceof TaskFileNameConflictError) throw e
@@ -380,14 +415,14 @@ export class ProjectStore {
 
   async updateTask(project: Project, taskId: string, patch: Partial<Task>): Promise<void> {
     updateTaskInTree(project.tasks, taskId, patch)
-    await this.saveProject(project)
+    await this.saveProject(project, 'taskOnly')
   }
 
   async updateTasks(project: Project, taskIds: string[], patch: Partial<Task>): Promise<void> {
     for (const id of taskIds) {
       updateTaskInTree(project.tasks, id, patch)
     }
-    await this.saveProject(project)
+    await this.saveProject(project, 'taskOnly')
   }
 
   async deleteTasks(project: Project, taskIds: string[]): Promise<void> {
@@ -462,7 +497,7 @@ export class ProjectStore {
     for (const p of patches) {
       updateTaskInTree(project.tasks, p.taskId, { start: p.start, due: p.due })
     }
-    await this.saveProject(project)
+    await this.saveProject(project, 'taskOnly')
     return patches.length
   }
 }

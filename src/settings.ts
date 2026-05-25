@@ -146,6 +146,18 @@ export class PMSettingTab extends PluginSettingTab {
         })
       )
 
+    new Setting(containerEl)
+      .setName('Auto-merge sync conflicts (experimental)')
+      .setDesc(
+        'Try to automatically merge duplicate project/task files created by sync conflicts. Keep off unless you share a vault.'
+      )
+      .addToggle((t) =>
+        t.setValue(this.plugin.settings.autoMergeConflicts).onChange(async (v) => {
+          this.plugin.settings.autoMergeConflicts = v
+          await this.plugin.saveSettings()
+        })
+      )
+
     // ── Team Members ──────────────────────────────────────────────────────────
     new Setting(containerEl).setName('Team members').setHeading()
 
@@ -238,7 +250,7 @@ export class PMSettingTab extends PluginSettingTab {
         }
       }
       if (modified) {
-        await this.plugin.store.saveProject(project)
+        await this.plugin.store.saveProject(project, 'taskOnly')
       }
     }
     if (remapped > 0) {

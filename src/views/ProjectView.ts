@@ -139,6 +139,9 @@ export class ProjectView extends ItemView {
       this.renderMissingProject()
       return
     }
+    if (this.project.filePath !== this.filePath) {
+      this.filePath = this.project.filePath
+    }
     this.loadFilterFromSettings()
     ;(this.leaf as WorkspaceLeaf & { updateHeader?: () => void }).updateHeader?.()
     this.renderProjectToolbar()

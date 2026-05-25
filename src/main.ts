@@ -43,7 +43,11 @@ export default class PMPlugin extends Plugin {
 
   async onload(): Promise<void> {
     await this.loadSettings()
-    this.store = new ProjectStore(this.app, () => this.settings.statuses)
+    this.store = new ProjectStore(
+      this.app,
+      () => this.settings.statuses,
+      () => this.settings.autoMergeConflicts
+    )
     this.notifier = new Notifier(this)
     this.router = new PMViewRouter(this)
 
@@ -231,7 +235,6 @@ export default class PMPlugin extends Plugin {
     openTaskModal(this, project, {
       parentId,
       onSave: async () => {
-        await this.store.saveProject(project)
         await this.router.openProjectByPath(project.filePath)
       }
     })

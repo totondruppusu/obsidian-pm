@@ -165,7 +165,7 @@ export class TableView implements SubView {
         task[field] = [...task[field], value]
       }
     }
-    await this.plugin.store.saveProject(this.project)
+    await this.plugin.store.saveProject(this.project, 'taskOnly')
   }
 
   private updateBulkBar(): void {

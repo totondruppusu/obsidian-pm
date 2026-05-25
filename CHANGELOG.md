@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.1] - 2026-05-25
+
+### Added
+
+- Optional auto-merge flow for sync conflict copies in shared vaults (`Settings > Auto-merge sync conflicts (experimental)`), including deterministic canonical file selection and per-project conflict archival
+- Field-level task conflict merge strategy for duplicate task IDs (`updatedAt` LWW + deduped union for assignees/tags/dependencies/subtaskIds)
+- Task/project conflict merge test coverage and save-mode routing tests
+
+### Changed
+
+- Task-only updates now save with `taskOnly` mode to reduce unnecessary rewrites of the project note, lowering cross-device conflict pressure
+- Project view now tracks canonicalized project paths after conflict normalization
+
 ## [1.5.0] - 2026-05-25
 
 ### Added
