@@ -228,9 +228,7 @@ async function mergeProjectGroup(app: App, group: ProjectCandidate[]): Promise<s
 }
 
 export async function mergeProjectConflictsInFolder(app: App, folder: string): Promise<Map<string, string>> {
-  const files = app.vault
-    .getMarkdownFiles()
-    .filter((f) => f.path.startsWith(folder + '/') && isProjectFilePath(f.path))
+  const files = app.vault.getMarkdownFiles().filter((f) => f.path.startsWith(folder + '/') && isProjectFilePath(f.path))
 
   const byProjectId = new Map<string, ProjectCandidate[]>()
   for (const file of files) {

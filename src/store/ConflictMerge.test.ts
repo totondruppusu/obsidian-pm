@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { makeTask } from '../types'
-import {
-  chooseCanonicalPath,
-  isConflictLikePath,
-  mergeTaskCandidates,
-  type TaskCandidate
-} from './ConflictMerge'
+import { chooseCanonicalPath, isConflictLikePath, mergeTaskCandidates, type TaskCandidate } from './ConflictMerge'
 
 function candidate(input: {
   path: string
